@@ -2,14 +2,14 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=1920, height=1080" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>コメントオーバーレイ</title>
   <style>
     html, body {
       margin: 0;
       padding: 0;
-      width: 1920px;
-      height: 1080px;
+      width: 100vw;
+      height: 100vh;
       background: transparent;
       overflow: hidden;
       font-family: sans-serif;
@@ -17,12 +17,11 @@
     }
 
     #frame {
-      width: 1920px;
-      height: 1080px;
+      width: 100vw;
+      height: 100vh;
       box-sizing: border-box;
       padding: 20px;
       border: 2px solid white;
-      background-color: rgba(0, 0, 0, 0.1);
     }
 
     .comment {
@@ -32,7 +31,7 @@
       border-left: 4px solid #ffff66;
       border-radius: 8px;
       width: fit-content;
-      max-width: 100%;
+      max-width: 90vw;
     }
   </style>
 </head>
