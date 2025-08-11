@@ -3,180 +3,126 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WhoWatch Overlay (増分ポーリング)</title>
+<title>WhoWatch Overlay（最新のみ・増分ポーリング）</title>
 <style>
   html,body{margin:0;background:#0b0b0b;color:#fff;font-family:sans-serif}
   #frame{padding:14px}
-  .row{margin:6px 0;padding:8px 12px;background:rgba(0,0,0,.55);border-left:4px solid #ffeb66;border-radius:8px;max-width:92vw}
-  .meta{opacity:.7;font-size:12px}
-  .toolbar{position:fixed;right:8px;top:8px;display:flex;gap:6px}
-  button{background:#1b1b1b;color:#fff;border:1px solid #444;border-radius:8px;padding:6px 10px;cursor:pointer}
+  .row{margin:6px 0;padding:10px 14px;background:rgba(0,0,0,.6);
+       border-left:4px solid #ffeb66;border-radius:10px;max-width:92vw}
+  .meta{opacity:.7;font-size:12px;margin-top:4px}
   #status{position:fixed;left:8px;top:8px;opacity:.7;font-size:12px}
 </style>
 </head>
 <body>
-<div id="status">準備中…</div>
-<div class="toolbar">
-  <button id="btn-now"  title="今から先だけ拾う">今から開始</button>
-  <button id="btn-all"  title="最初から拾い直す">すべて取得開始</button>
-  <button id="btn-clr"  title="表示だけクリア">表示クリア</button>
-</div>
-<div id="frame"></div>
+<div id="status">初期化中…</div>
+<div id="frame"><div class="row">待機中…</div></div>
 
 <script>
-/* ===== 設定（差し替え） ===== */
-const USER   = "YOUR_USER";
-const GISTID = "YOUR_GIST_ID";
-const BASE   = "https://api.whowatch.tv/lives/";
+/* ===== ここを差し替え ===== */
+const USER   = "rarirure69n66";      // 例: rarirure69n66
+const GISTID = "5697ca0fe833531c03c10ba6950f7d3e";   // 例: 1a2b3c4d5e6...
+const POLL_MS = 1500;            // 取得間隔(ms)
 /* ========================= */
 
 const RAW_GIST = `https://gist.githubusercontent.com/${USER}/${GISTID}/raw/current.txt`;
+const BASE_API = "https://api.whowatch.tv/lives/";
 const elFrame  = document.getElementById('frame');
 const elStatus = document.getElementById('status');
 
 let liveId    = "";
-let apiPrefix = ""; // https://api.whowatch.tv/lives/<id>?last_updated_at=
-let lastCur   = null;  // localStorage保持カーソル（文字列推奨）
-let etag      = null;  // 任意：ETag節約
-let seenIds   = new Set(); // 重複防止
-let delayMs   = 1500;  // バックオフ可変
-let run       = true;
+let apiPrefix = "";    // https://api.whowatch.tv/lives/<id>?last_updated_at=
+let lastCur   = null;  // 初回は「完全リセット」＝ null
+let etag      = null;  // 任意: ETagが返れば節約に使う
 
-function keyCur(id){ return `ww_last_updated_${id}`; }
-function keySeen(id){ return `ww_seen_${id}`; }
+function setStatus(s){ elStatus.textContent = s; }
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
 
-function convertToApiUrl(u){
+function convertToApi(u){
   const s=(u||"").trim();
   let m = s.match(/^https?:\/\/api\.whowatch\.tv\/lives\/(\d+)/);
-  if(m) return {id:m[1], url:`${BASE}${m[1]}?last_updated_at=`};
+  if(m) return {id:m[1], url:`${BASE_API}${m[1]}?last_updated_at=`};
   m = s.match(/whowatch\.tv\/(?:lives|viewer)\/(\d+)/);
-  if(m) return {id:m[1], url:`${BASE}${m[1]}?last_updated_at=`};
+  if(m) return {id:m[1], url:`${BASE_API}${m[1]}?last_updated_at=`};
   m = s.match(/r\.whowatch\.tv\/lives\/(\d+)/);
-  if(m) return {id:m[1], url:`${BASE}${m[1]}?last_updated_at=`};
+  if(m) return {id:m[1], url:`${BASE_API}${m[1]}?last_updated_at=`};
   return null;
 }
 
-function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
-function setStatus(s){ elStatus.textContent = s; }
-
-function loadSeen(){
-  try{
-    const raw = localStorage.getItem(keySeen(liveId));
-    if(raw){ seenIds = new Set(JSON.parse(raw)); }
-  }catch{}
-}
-function saveSeen(){
-  // サイズ肥大防止：直近200件だけ残す
-  if(seenIds.size>200){
-    const arr=[...seenIds]; seenIds = new Set(arr.slice(arr.length-200));
-  }
-  localStorage.setItem(keySeen(liveId), JSON.stringify([...seenIds]));
-}
-
-function loadCursor(mode){
-  if(mode==="resetAll"){
-    lastCur=null; localStorage.removeItem(keyCur(liveId));
-  }else{
-    lastCur = localStorage.getItem(keyCur(liveId));
-    if(!lastCur && mode==="now"){
-      lastCur = new Date().toISOString(); // 過去爆量回避
-      localStorage.setItem(keyCur(liveId), lastCur);
-    }
-  }
-}
-function saveCursor(v){ lastCur=v; localStorage.setItem(keyCur(liveId), v); }
-
 async function initFromGist(){
-  const res = await fetch(RAW_GIST+"?t="+Date.now(), {cache:"no-store"});
-  if(!res.ok) throw new Error("Gist取得失敗 "+res.status);
+  const res = await fetch(RAW_GIST + "?t=" + Date.now(), { cache:"no-store" });
+  if(!res.ok) throw new Error("Gist取得失敗 " + res.status);
   const first = (await res.text()).split(/\r?\n/).map(s=>s.trim()).find(Boolean)||"";
-  const conv = convertToApiUrl(first);
-  if(!conv) throw new Error("対応外URL: "+first);
+  const conv = convertToApi(first);
+  if(!conv) throw new Error("対応外URL: " + first);
   liveId    = conv.id;
   apiPrefix = conv.url;
+  // 要望：アクセス時に last_updated_at リセット（＝最初から取得）
+  lastCur   = null;
+  setStatus(`開始 live:${liveId} last: <全取得>`);
 }
 
-function appendComment(c){
-  const div=document.createElement('div');
-  div.className='row';
+function renderLatest(c){
   const user = c?.user?.name ?? c?.user_name ?? "匿名";
   const text = c?.text ?? c?.body ?? JSON.stringify(c);
   const t    = c?.created_at || c?.updated_at || c?.time || "";
-  div.innerHTML = `<div><strong>${escapeHtml(user)}</strong>：${escapeHtml(text)}</div><div class="meta">${escapeHtml(t)}</div>`;
-  elFrame.appendChild(div);
-  // 100行キープ
-  while(elFrame.childElementCount>100) elFrame.removeChild(elFrame.firstElementChild);
+  elFrame.innerHTML = `
+    <div class="row">
+      <div><strong>${escapeHtml(user)}</strong>：${escapeHtml(text)}</div>
+      <div class="meta">${escapeHtml(t)}</div>
+    </div>`;
 }
 
 async function pollOnce(){
   const url = apiPrefix + encodeURIComponent(lastCur||"");
   const headers = {"cache-control":"no-cache"};
-  if(etag) headers["If-None-Match"]=etag;
+  if(etag) headers["If-None-Match"] = etag;
 
-  const res = await fetch(url, {headers});
-  if(res.status===304){ setStatus(`304 Not Modified / last:${lastCur||"-"}`); return; }
-  if(!res.ok) throw new Error("API "+res.status);
+  const res = await fetch(url, { headers });
+  if(res.status === 304){ setStatus(`304 Not Modified / last:${lastCur||"<全取得>"}`); return; }
+  if(!res.ok) throw new Error("API " + res.status);
 
   etag = res.headers.get("etag") || etag;
   const json = await res.json();
 
-  // WhoWatchの実レスポンスに合わせる（仮：comments配列）
-  const arr = Array.isArray(json.comments) ? json.comments : (json.data||[]);
+  // WhoWatchの実レスポンスに合わせてここを調整（仮に comments or data に配列）
+  const arr = Array.isArray(json.comments) ? json.comments : (json.data || []);
   if(Array.isArray(arr) && arr.length){
-    // 古→新
+    // 古→新に整列して、最新1件だけ表示
     arr.sort((a,b)=> new Date(a.created_at||a.updated_at||0) - new Date(b.created_at||b.updated_at||0));
-    for(const c of arr){
-      const id = c.id ?? (c.user_id+"-"+(c.created_at||c.updated_at||Math.random()));
-      if(seenIds.has(id)) continue;
-      seenIds.add(id);
-      appendComment(c);
-    }
-    saveSeen();
+    const latest = arr[arr.length - 1];
+    renderLatest(latest);
 
-    // カーソル更新（APIが返すものを優先）
+    // カーソル更新：APIがlast_updated_at/cursorを返すならそれを優先
     let nextCur = json.last_updated_at || json.cursor || null;
     if(!nextCur){
-      nextCur = arr.reduce((mx,c)=>{
-        const t = c.created_at||c.updated_at||c.time; const iso = t?new Date(t).toISOString():null;
-        return (!mx || (iso&&iso>mx)) ? iso : mx;
-      }, lastCur);
+      const t = latest.created_at || latest.updated_at || latest.time;
+      nextCur = t ? new Date(t).toISOString() : null;
     }
-    if(nextCur) saveCursor(String(nextCur));
+    if(nextCur) lastCur = String(nextCur);
   }
-
-  setStatus(`OK live:${liveId} last:${lastCur||"-"}`);
+  setStatus(`OK live:${liveId} last:${lastCur||"<全取得>"}`);
 }
 
 async function loop(){
-  while(run){
+  while(true){
     try{
       await pollOnce();
-      // 成功→間隔リセット
-      delayMs = 1500;
     }catch(e){
-      setStatus("ERR "+e.message);
-      // 失敗→指数バックオフ（最大10s）
-      delayMs = Math.min(delayMs*2, 10000);
+      setStatus("ERR " + e.message);
     }
-    await new Promise(r=>setTimeout(r, delayMs));
+    await new Promise(r=>setTimeout(r, POLL_MS));
   }
 }
 
-async function start(mode="now"){
-  run=false; await new Promise(r=>setTimeout(r,10));
-  elFrame.innerHTML=""; setStatus("初期化…");
-  await initFromGist();
-  loadCursor(mode);
-  loadSeen();
-  setStatus(`開始 live:${liveId} last:${lastCur||"-"}`);
-  run=true; loop();
-}
-
-document.getElementById('btn-now').onclick = ()=> start("now");
-document.getElementById('btn-all').onclick = ()=> start("resetAll");
-document.getElementById('btn-clr').onclick = ()=> { elFrame.innerHTML=""; };
-
-start("now");
+(async function main(){
+  try{
+    await initFromGist();  // URL読み + リセット
+    await pollOnce();      // まず1回（全取得の最後＝最新を表示）
+    loop();                // 以後は最新だけ拾い続ける
+  }catch(e){
+    setStatus("初期化失敗: " + e.message);
+  }
+})();
 </script>
 </body>
 </html>
