@@ -98,11 +98,32 @@
     let lastCur = null;       // 初回はリセット（null）→「最初から取得」
     let etag = null;
 
-    async function readGist(){
-      const res = await fetch(RAW_GIST + "?t=" + Date.now(), { cache: "no-store" });
-      if (!res.ok) throw new Error(`Gist取得失敗: ${res.status}`);
-      return (await res.text()).trim();
-    }
+	// 先頭に追加
+	const API_GIST = `https://api.github.com/gists/${GISTID}`;
+
+	// これに置き換え
+	async function readGist(){
+	  const res = await fetch(API_GIST, {
+	    headers: {
+	      "Accept": "application/vnd.github+json",
+	      "Cache-Control": "no-cache"
+	    }
+	  });
+	  if (!res.ok) throw new Error(`Gist(API)取得失敗: ${res.status}`);
+	  const j = await res.json();
+	  const f = j.files?.["current.txt"];
+	  if (!f) throw new Error("Gistに current.txt が無いよ");
+	  if (f.truncated === false && typeof f.content === "string") {
+	    return f.content.trim();
+	  }
+	  if (f.raw_url) {
+	    const r = await fetch(f.raw_url + "?t=" + Date.now(), { cache: "no-store" });
+	    if (!r.ok) throw new Error(`Gist raw取得失敗: ${r.status}`);
+	    return (await r.text()).trim();
+	  }
+	  throw new Error("Gistファイルが読めない（raw_urlなし）");
+	}
+
 
     async function init(){
       elErr.textContent = "";
