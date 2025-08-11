@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+ï»¿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-  <title>WhoWatch URLƒRƒ“ƒo[ƒ^ ¨ API•\¦</title>
+  <title>WhoWatch URLã‚³ãƒ³ãƒãƒ¼ã‚¿ â†’ APIè¡¨ç¤º</title>
   <style>
     html,body{margin:0;padding:0;background:#0b0b0b;color:#fff;font-family:sans-serif}
     .wrap{padding:16px}
@@ -17,16 +17,16 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>WhoWatch URL ¨ API URL •ÏŠ·</h1>
+    <h1>WhoWatch URL â†’ API URL å¤‰æ›</h1>
     <div class="small">Gist: <span id="gist-url"></span></div>
 
     <div class="box">
-      <div class="label">Gist“à‚ÌŒ³URLi•¡”sOKj</div>
+      <div class="label">Gistå†…ã®å…ƒURLï¼ˆè¤‡æ•°è¡ŒOKï¼‰</div>
       <div id="raw" class="small"></div>
     </div>
 
     <div class="box">
-      <div class="label">•ÏŠ·Œ‹‰ÊiAPI URLj</div>
+      <div class="label">å¤‰æ›çµæœï¼ˆAPI URLï¼‰</div>
       <div id="converted" class="api"></div>
     </div>
 
@@ -34,9 +34,9 @@
   </div>
 
   <script>
-    // ====== İ’èi‚±‚±‚ğ·‚µ‘Ö‚¦j======
-    const USER   = "rarirure69n66";     // —á: rarirure69n66
-    const GISTID = "5697ca0fe833531c03c10ba6950f7d3e";  // —á: 1a2b3c4d5e6f7...
+    // ====== è¨­å®šï¼ˆã“ã“ã‚’å·®ã—æ›¿ãˆï¼‰======
+    const USER   = "rarirure69n66";     // ä¾‹: rarirure69n66
+    const GISTID = "5697ca0fe833531c03c10ba6950f7d3e";  // ä¾‹: 1a2b3c4d5e6f7...
     // ==================================
 
     const RAW_GIST = `https://gist.githubusercontent.com/${USER}/${GISTID}/raw/current.txt`;
@@ -47,26 +47,26 @@
       if (!u) return "";
       const s = u.trim();
 
-      // ‚·‚Å‚ÉAPIŒ`®‚È‚ç‚»‚Ì‚Ü‚Üilast_updated_at‚Íc‚·/•t‚¯’¼‚·j
+      // ã™ã§ã«APIå½¢å¼ãªã‚‰ãã®ã¾ã¾ï¼ˆlast_updated_atã¯æ®‹ã™/ä»˜ã‘ç›´ã™ï¼‰
       const mApi = s.match(/^https?:\/\/api\.whowatch\.tv\/lives\/(\d+)(?:\?.*)?$/);
       if (mApi) {
         return `https://api.whowatch.tv/lives/${mApi[1]}?last_updated_at=`;
       }
 
-      // /lives/<id> ‚Ü‚½‚Í /viewer/<id> ‚©‚ç’Šo
+      // /lives/<id> ã¾ãŸã¯ /viewer/<id> ã‹ã‚‰æŠ½å‡º
       const m = s.match(/whowatch\.tv\/(?:lives|viewer)\/(\d+)/);
       if (m) {
         const id = m[1];
         return `https://api.whowatch.tv/lives/${id}?last_updated_at=`;
       }
 
-      // r.whowatch.tv ‚Ì /lives/<id>/share Œ`®
+      // r.whowatch.tv ã® /lives/<id>/share å½¢å¼
       const mR = s.match(/r\.whowatch\.tv\/lives\/(\d+)/);
       if (mR) {
         return `https://api.whowatch.tv/lives/${mR[1]}?last_updated_at=`;
       }
 
-      // ƒ}ƒbƒ`‚µ‚È‚©‚Á‚½‚ç‚»‚Ì‚Ü‚Ü•Ô‚·iƒGƒ‰[•\¦—pj
+      // ãƒãƒƒãƒã—ãªã‹ã£ãŸã‚‰ãã®ã¾ã¾è¿”ã™ï¼ˆã‚¨ãƒ©ãƒ¼è¡¨ç¤ºç”¨ï¼‰
       return s;
     }
 
@@ -76,26 +76,26 @@
 
       try {
         const res = await fetch(RAW_GIST + "?t=" + Date.now(), { cache: "no-store" });
-        if (!res.ok) throw new Error(`Gistæ“¾¸”s: ${res.status}`);
+        if (!res.ok) throw new Error(`Gistå–å¾—å¤±æ•—: ${res.status}`);
         const txt = (await res.text()).trim();
 
-        // Œ³URL‚ğ•\¦
-        document.getElementById('raw').textContent = txt || "(‹ó‚Å‚·)";
+        // å…ƒURLã‚’è¡¨ç¤º
+        document.getElementById('raw').textContent = txt || "(ç©ºã§ã™)";
 
-        // s‚²‚Æ‚É•ª‰ğ‚µ‚Ä•ÏŠ·
+        // è¡Œã”ã¨ã«åˆ†è§£ã—ã¦å¤‰æ›
         const lines = txt.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
         const converted = lines.map(convertToApiUrl);
 
-        // •ÏŠ·Œ‹‰Ê‚Ì•\¦
+        // å¤‰æ›çµæœã®è¡¨ç¤º
         const convDiv = document.getElementById('converted');
         convDiv.innerHTML = converted.length
           ? converted.map(u => `<div>${escapeHtml(u)}</div>`).join("")
-          : "(—LŒø‚ÈURL‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñ‚Å‚µ‚½)";
+          : "(æœ‰åŠ¹ãªURLãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã§ã—ãŸ)";
 
-        // •ÏŠ·‚Å‚«‚Ä‚¢‚È‚¢s‚ª‚ ‚é‚©Œy‚­ƒ`ƒFƒbƒN
+        // å¤‰æ›ã§ãã¦ã„ãªã„è¡ŒãŒã‚ã‚‹ã‹è»½ããƒã‚§ãƒƒã‚¯
         const notConverted = converted.filter((u,i)=>!/^https?:\/\/api\.whowatch\.tv\/lives\/\d+\?last_updated_at=$/.test(u));
         if (notConverted.length) {
-          err.textContent = "ˆê•”‚Ìs‚ÍAPIŒ`®‚É•ÏŠ·‚Å‚«‚Ü‚¹‚ñ‚Å‚µ‚½B‘®‚ğŠm”F‚µ‚Ä‚­‚¾‚³‚¢B";
+          err.textContent = "ä¸€éƒ¨ã®è¡Œã¯APIå½¢å¼ã«å¤‰æ›ã§ãã¾ã›ã‚“ã§ã—ãŸã€‚æ›¸å¼ã‚’ç¢ºèªã—ã¦ãã ã•ã„ã€‚";
         }
 
       } catch (e) {
@@ -108,7 +108,7 @@
     }
 
     tick();
-    // •K—v‚È‚ç’èŠúXViGist‚Ìè“®XV‚É’Ç]j
+    // å¿…è¦ãªã‚‰å®šæœŸæ›´æ–°ï¼ˆGistã®æ‰‹å‹•æ›´æ–°ã«è¿½å¾“ï¼‰
     setInterval(tick, 2000);
   </script>
 </body>
