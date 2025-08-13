@@ -5,15 +5,20 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
 <title>WhoWatch コメント（最新が上／左30%×縦80%／安全IMG）</title>
 <style>
-  html,body{margin:0;background:#0b0b0b;color:#fff;font-family:sans-serif;height:100%}
-  /* 左端の固定ウィンドウ */
+  html,body{
+    margin:0;
+    background:transparent; /* ←透明に変更 */
+    color:#fff;
+    font-family:sans-serif;
+    height:100%;
+  }
+  
   #panel{
     position:fixed; left:0; top:10vh;
     width:30vw; height:80vh;
     box-sizing:border-box; padding:10px 12px;
-    background:rgba(0,0,0,.55);
-    /* border-right:1px solid #333;  ←削除 */
-    **border-right:none;**
+    background:transparent; /* ←透明に変更 */
+    border-right:none;
     overflow-y:auto;
     scrollbar-width:none; -ms-overflow-style:none;
   }
@@ -298,4 +303,5 @@ async function loop(){
 </script>
 </body>
 </html>
+
 
