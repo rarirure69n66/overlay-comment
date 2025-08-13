@@ -3,19 +3,24 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<title>WhoWatch コメント（新しい→上／左30%・縦80%／安全なIMG表示）</title>
+<title>WhoWatch コメント（最新が上／左30%×縦80%／安全IMG）</title>
 <style>
   html,body{margin:0;background:#0b0b0b;color:#fff;font-family:sans-serif;height:100%}
+  /* 左端の固定ウィンドウ */
   #panel{
-    position:fixed; left:0; top:10vh;
-    width:30vw; height:80vh;
+    position:fixed; left:0; top:10vh;   /* 上10%余白 → 高さ80% */
+    width:30vw; height:80vh;            /* 横30% × 縦80% */
     box-sizing:border-box; padding:10px 12px;
     background:rgba(0,0,0,.55); border-right:1px solid #333;
-    overflow-y:auto; scrollbar-width:none; -ms-overflow-style:none;
+    overflow-y:auto;                     /* 中はスクロール可（バーは隠す） */
+    scrollbar-width:none; -ms-overflow-style:none;
   }
   #panel::-webkit-scrollbar{ width:0; height:0 }
 
+  /* ヘッダー/ステータスは非表示（必要なら表示可） */
   #title, #status{ display:none; }
+
+  /* コメントリスト（最新を上＝先頭に追加） */
   ul#list{list-style:none; padding:0; margin:0}
   ul#list li{
     margin:8px 0; padding:8px 10px;
@@ -25,8 +30,10 @@
   .user{font-weight:700}
   .msg{white-space:pre-wrap; word-break:break-word}
   .meta{font-size:11px; opacity:.7; margin-top:4px}
-  /* 絵文字IMGの見た目を統一（style属性は捨てるため） */
+  /* 絵文字画像の統一スタイル（style属性は捨てるのでCSSで指定） */
   .msg img.emoji{ vertical-align:text-bottom; width:1.5em; height:1.5em; }
+
+  /* エラー表示は隠す（必要時だけ開発者ツールで確認） */
   #err{display:none;}
 </style>
 </head>
@@ -39,32 +46,30 @@
 </div>
 
 <script>
-/* ===== 設定 ===== */
+/* ====== 設定（あなたの値）====== */
 const USER        = "rarirure69n66";
 const GISTID      = "5697ca0fe833531c03c10ba6950f7d3e";
-const POLL_MS     = 1500;
-const WORKER_BASE = "https://whowatch-relay.win3100c.workers.dev/ww/lives/"; // 末尾 /
-/* ============== */
+const POLL_MS     = 1500; // 1.5秒ごと
+const WORKER_BASE = "https://whowatch-relay.win3100c.workers.dev/ww/lives/"; // 末尾 / 必須
+/* ================================== */
 
 const RAW_GIST = `https://gist.githubusercontent.com/${USER}/${GISTID}/raw/current.txt`;
 const API_GIST = `https://api.github.com/gists/${GISTID}`;
 
 const elList = document.getElementById('list');
+const elErr  = document.getElementById('err');
 
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
 
-/* ---- 安全なHTMLサニタイザ（IMG/A/BR等だけ許可） ---- */
+/* ---------- 安全サニタイザ（限定的にHTML許可） ---------- */
 function sanitizeMessageHTML(raw){
-  // 生テキスト（HTMLなし）の場合はそのままテキスト化
   if (!/[<>&]/.test(raw)) return document.createTextNode(raw);
-
   const parser = new DOMParser();
-  // ラップしてパース
   const doc = parser.parseFromString(`<div>${raw}</div>`, "text/html");
   const root = doc.body.firstChild;
 
   const allowedTags = new Set(["BR","IMG","B","I","U","STRONG","EM","A","SPAN"]);
-  const allowedImgHostSuffix = [".whowatch.tv"]; // 例: img.whowatch.tv / static.whowatch.tv など
+  const allowedImgHostSuffix = [".whowatch.tv"]; // img.whowatch.tv 等
   const frag = document.createDocumentFragment();
 
   function isAllowedImgSrc(urlStr){
@@ -74,87 +79,57 @@ function sanitizeMessageHTML(raw){
       return allowedImgHostSuffix.some(suf => u.hostname.endsWith(suf));
     }catch{ return false; }
   }
-
   function walk(node, outParent){
     if (node.nodeType === Node.TEXT_NODE){
       outParent.appendChild(document.createTextNode(node.nodeValue));
       return;
     }
-    if (node.nodeType !== Node.ELEMENT_NODE){
-      return; // コメント等は捨てる
-    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
 
     const tag = node.tagName;
     if (!allowedTags.has(tag)){
-      // 許可されていないタグは中身だけを再帰処理（タグ自体は除去）
       for (const child of [...node.childNodes]) walk(child, outParent);
       return;
     }
-
-    if (tag === "BR"){
-      outParent.appendChild(document.createElement("br"));
-      return;
-    }
-
+    if (tag === "BR"){ outParent.appendChild(document.createElement("br")); return; }
     if (tag === "IMG"){
       const src = node.getAttribute("src") || "";
-      if (!isAllowedImgSrc(src)) {
-        // 許可外SRCはテキストに落とす
-        outParent.appendChild(document.createTextNode(`[img blocked]`));
+      if (!isAllowedImgSrc(src)){
+        outParent.appendChild(document.createTextNode("[img blocked]"));
         return;
       }
       const img = document.createElement("img");
       img.src = src;
-      // 絵文字系なら class=emoji を付与（/emoji/ を含む場合）
       if (src.includes("/emoji/")) img.className = "emoji";
-      // 安全のため style/onclick 等はコピーしない
       img.referrerPolicy = "no-referrer";
       img.loading = "lazy";
       outParent.appendChild(img);
       return;
     }
-
     if (tag === "A"){
       const href = node.getAttribute("href") || "";
       try{
         const u = new URL(href, location.href);
         if (u.protocol !== "https:") throw 0;
         const a = document.createElement("a");
-        a.href = u.href;
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
-        // 子要素を再帰でサニタイズして入れる
+        a.href = u.href; a.target = "_blank"; a.rel = "noopener noreferrer";
         for (const child of [...node.childNodes]) walk(child, a);
         outParent.appendChild(a);
       }catch{
-        // 不正URLは中身だけ残す
         for (const child of [...node.childNodes]) walk(child, outParent);
       }
       return;
     }
-
-    // B/I/U/STRONG/EM/SPAN は属性を剝いでタグのみ許可
+    // B/I/U/STRONG/EM/SPAN は属性無しでそのまま許可
     const safe = document.createElement(tag.toLowerCase());
     for (const child of [...node.childNodes]) walk(child, safe);
     outParent.appendChild(safe);
   }
-
   for (const child of [...root.childNodes]) walk(child, frag);
   return frag;
 }
 
-/* URL→id抽出＆プロキシURL生成 */
-function buildApiUrlFromSource(u){
-  const s=(u||"").trim();
-  let m = s.match(/^https?:\/\/api\.whowatch\.tv\/lives\/(\d+)/);
-  if(!m) m = s.match(/whowatch\.tv\/(?:lives|viewer)\/(\d+)/);
-  if(!m) m = s.match(/r\.whowatch\.tv\/lives\/(\d+)/);
-  if(!m) return null;
-  const id = m[1];
-  return { id, url: `${WORKER_BASE}${id}?last_updated_at=` };
-}
-
-/* Gist読み（API優先→RAWフォールバック） */
+/* ---------- Gist からURLを取得 ---------- */
 async function readGistText(){
   try{
     const res = await fetch(API_GIST, { headers: { "Accept":"application/vnd.github+json" }, cache:"no-store" });
@@ -176,11 +151,22 @@ async function readGistText(){
   }
 }
 
-/* 表示：先頭に（最新を上に） */
-function prependComment(c){
-  const li = document.createElement('li');
+/* ---------- URL→id抽出＆プロキシURL生成 ---------- */
+function buildApiUrlFromSource(u){
+  const s=(u||"").trim();
+  let m = s.match(/^https?:\/\/api\.whowatch\.tv\/lives\/(\d+)/);
+  if(!m) m = s.match(/whowatch\.tv\/(?:lives|viewer)\/(\d+)/);
+  if(!m) m = s.match(/r\.whowatch\.tv\/lives\/(\d+)/);
+  if(!m) return null;
+  const id = m[1];
+  return { id, url: `${WORKER_BASE}${id}?last_updated_at=` };
+}
 
+/* ---------- 表示：最新を上に（先頭に追加） ---------- */
+function prependComment(c){
+  const li   = document.createElement('li');
   const user = c?.user?.name ?? c?.user_name ?? "匿名";
+  const msg  = c?.message ?? c?.escaped_message ?? c?.text ?? c?.body ?? "";
   const ts   = typeof c?.posted_at === "number"
                 ? new Date(c.posted_at).toLocaleString()
                 : (c?.created_at || c?.updated_at || c?.time || "");
@@ -191,9 +177,7 @@ function prependComment(c){
 
   const msgDiv = document.createElement('div');
   msgDiv.className = "msg";
-  const rawMsg = c?.message ?? c?.escaped_message ?? c?.text ?? c?.body ?? "";
-  const safeFrag = sanitizeMessageHTML(rawMsg);
-  msgDiv.appendChild(safeFrag);
+  msgDiv.appendChild(sanitizeMessageHTML(msg)); // 安全にHTML反映
 
   const metaDiv = document.createElement('div');
   metaDiv.className = "meta";
@@ -203,39 +187,55 @@ function prependComment(c){
   li.appendChild(msgDiv);
   li.appendChild(metaDiv);
 
-  elList.insertBefore(li, elList.firstChild);
-  // 上限件数（古い方＝末尾から削除）
+  elList.insertBefore(li, elList.firstChild); // 先頭に追加＝最新が上
+  // 件数制限（古い方＝末尾から削除）
   const MAX = 80;
   while (elList.childElementCount > MAX) elList.removeChild(elList.lastChild);
 }
 
-/* ===== 変換＋ポーリング ===== */
-let apiUrl = "", liveId = "", lastCur = null, etag = null, seen = new Set();
-function idOf(c){ return c?.id ?? `${c?.user?.id||c?.user_id||"u"}-${c?.posted_at||c?.created_at||c?.updated_at||Math.random()}`; }
+/* ---------- 増分取得ロジック（last_updated_at は UNIXミリ秒） ---------- */
+let apiUrl = "", liveId = "";
+let lastCurMs = null;   // ★ 常に「UNIXミリ秒」を保持
+let etag   = null;      // 必要に応じて使う（不安定なら無効化してOK）
+let seen   = new Set(); // 重複防止
+
+function idOf(c){
+  return c?.id ?? `${c?.user?.id||c?.user_id||"u"}-${c?.posted_at||c?.created_at||c?.updated_at||Math.random()}`;
+}
+function tsMs(c){
+  if (typeof c?.posted_at === "number") return c.posted_at;
+  const t = c?.created_at || c?.updated_at || c?.time;
+  const ms = Date.parse(t);
+  return Number.isNaN(ms) ? 0 : ms;
+}
 
 async function init(){
   const txt = await readGistText();
   const first = (txt.split(/\r?\n/).map(s=>s.trim()).find(Boolean)) || "";
   const built = buildApiUrlFromSource(first);
   if (!built) throw new Error("対応外URL: " + first);
-  apiUrl = built.url; liveId = built.id; lastCur = null;
+  apiUrl   = built.url;
+  liveId   = built.id;
+  lastCurMs = null; // リセット＝最初から取得
 }
 
 async function pollOnce(){
-  const url = apiUrl + encodeURIComponent(lastCur || "");
-  const headers = {"cache-control":"no-store"}; if(etag) headers["If-None-Match"] = etag;
+  const url = apiUrl + encodeURIComponent(lastCurMs != null ? String(lastCurMs) : "");
+  const headers = {"cache-control":"no-store"};
+  if (etag) headers["If-None-Match"] = etag; // もし相性悪ければこの行と下の etag 行をコメントアウト
 
   const res = await fetch(url, { headers });
-  if(res.status === 304) return;
-  if(!res.ok) throw new Error(`WhoWatch ${res.status}`);
+  if (res.status === 304) return;
+  if (!res.ok) throw new Error(`WhoWatch ${res.status}`);
 
   etag = res.headers.get("etag") || etag;
   const json = await res.json();
 
+  // コメント配列（comments / data / 自動探索）
   let arr = Array.isArray(json.comments) ? json.comments
           : Array.isArray(json.data)     ? json.data
           : null;
-  if(!arr){
+  if (!arr){
     const find = (obj, depth=0) => {
       if(depth>3 || !obj) return null;
       if(Array.isArray(obj)){
@@ -249,40 +249,36 @@ async function pollOnce(){
     };
     arr = find(json);
   }
+  if (!Array.isArray(arr) || !arr.length) return;
 
-  if(Array.isArray(arr) && arr.length){
-    // 時系列に整列（古→新）
-    arr.sort((a,b)=>{
-      const ta = (typeof a.posted_at==="number") ? a.posted_at : +new Date(a.created_at||a.updated_at||0);
-      const tb = (typeof b.posted_at==="number") ? b.posted_at : +new Date(b.created_at||b.updated_at||0);
-      return ta - tb;
-    });
+  // 時系列でソート（古→新）。その順で先頭に挿入すると、最後に入った最新が一番上に来る
+  arr.sort((a,b)=> tsMs(a) - tsMs(b));
 
-    // 未表示分だけ順に先頭へ（結果として最新が最上段）
-    for(const c of arr){
-      const id = idOf(c);
-      if(seen.has(id)) continue;
-      seen.add(id);
-      prependComment(c);
-    }
-
-    // カーソル更新
-    let nextCur = json.last_updated_at || json.cursor || null;
-    if(!nextCur && arr.length){
-      const last = arr[arr.length-1];
-      if (typeof last.posted_at === "number") nextCur = new Date(last.posted_at).toISOString();
-      else {
-        const t = last.created_at || last.updated_at || last.time;
-        nextCur = t ? new Date(t).toISOString() : null;
-      }
-    }
-    if(nextCur) lastCur = String(nextCur);
+  const newly = [];
+  for (const c of arr){
+    const id = idOf(c);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    newly.push(c);
   }
+  for (const c of newly){ prependComment(c); }
+
+  // カーソル更新（サーバ返却優先 → 無ければ最後のコメント時刻）
+  let nextCurMs = null;
+  if (json.last_updated_at != null){
+    const n = Number(json.last_updated_at);
+    if (!Number.isNaN(n)) nextCurMs = n;
+  }
+  if (nextCurMs == null && arr.length){
+    nextCurMs = tsMs(arr[arr.length - 1]);
+  }
+  // 取りこぼし防止で 1ms 引く（include 境界対策）
+  if (nextCurMs != null) lastCurMs = nextCurMs - 1;
 }
 
 async function loop(){
   while(true){
-    try{ await pollOnce(); } catch(e){ /* 画面には出さない */ }
+    try{ await pollOnce(); } catch(e){ /* 画面には出さない（必要なら console.error(e)）*/ }
     await new Promise(r=>setTimeout(r, POLL_MS));
   }
 }
@@ -293,8 +289,8 @@ async function loop(){
     await pollOnce();
     loop();
   }catch(e){
-    // 初期化失敗時はコンソールにだけ出す
-    console.error(e);
+    // 初期化失敗時のみ開発者ツールで確認
+    console.error("init error:", e);
   }
 })();
 </script>
