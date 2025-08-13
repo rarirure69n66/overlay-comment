@@ -97,12 +97,19 @@ function buildApiUrlFromSource(u){
 // Gist読み（API優先→RAWフォールバック）
 async function readGistText(){
   try{
-    const res = await fetch(API_GIST, { headers: { "Accept":"application/vnd.github+json", "Cache-Control":"no-cache" }});
+    // 👇 ヘッダは Accept だけ。Cache-Control は付けない
+    const res = await fetch(API_GIST, {
+      headers: { "Accept":"application/vnd.github+json" },
+      cache: "no-store"     // ← こっちでキャッシュ無効化
+    });
     if(!res.ok) throw new Error(`Gist API ${res.status}`);
     const j = await res.json();
     const f = j.files?.["current.txt"];
     if (!f) throw new Error("Gistに current.txt がありません");
-    if (f.truncated === false && typeof f.content === "string") return f.content.trim();
+
+    if (f.truncated === false && typeof f.content === "string") {
+      return f.content.trim();
+    }
     if (f.raw_url) {
       const r = await fetch(f.raw_url + "?t=" + Date.now(), { cache:"no-store" });
       if(!r.ok) throw new Error(`Gist RAW ${r.status}`);
@@ -110,7 +117,7 @@ async function readGistText(){
     }
     throw new Error("Gistファイルを読めません（raw_urlなし）");
   }catch(e){
-    // RAW再試行
+    // RAWフォールバック（こっちはそのままでOK）
     try{
       const r = await fetch(RAW_GIST + "?t=" + Date.now(), { cache:"no-store" });
       if(!r.ok) throw new Error(`Gist RAW ${r.status}`);
@@ -120,6 +127,7 @@ async function readGistText(){
     }
   }
 }
+
 
 function showLatest(c){
   // ユーザー名
@@ -228,4 +236,5 @@ async function loop(){
 </script>
 </body>
 </html>
+
 
