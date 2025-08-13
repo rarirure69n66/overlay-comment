@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -212,6 +213,50 @@ function prependComment(c){
   const metaDiv = document.createElement('div'); metaDiv.className = "meta"; metaDiv.textContent = ts;
 
   li.appendChild(userDiv); li.appendChild(msgDiv); li.appendChild(metaDiv);
+  
+    // --- ★ アイテム画像（play_item_pattern.image_url）を表示 ---
+  const itemImgUrl =
+    c?.play_item_pattern?.image_url ||
+    c?.play_item?.image_url ||
+    null;
+
+  const itemCount = Number(c?.item_count || 0);
+
+  if (itemImgUrl) {
+    const itemRow  = document.createElement('div');
+    itemRow.className = 'item';
+
+    const wrap = document.createElement('span');
+    wrap.className = 'item-img-wrap';
+
+    const img = new Image();
+    img.src = itemImgUrl;
+    img.className = 'item-img';
+    img.referrerPolicy = 'no-referrer';
+    img.loading = 'lazy';
+
+    wrap.appendChild(img);
+
+    // 個数が 2 以上ならバッジ表示
+    if (itemCount >= 2) {
+      const badge = document.createElement('span');
+      badge.className = 'item-count';
+      badge.textContent = 'x' + itemCount;
+      wrap.appendChild(badge);
+    }
+
+    itemRow.appendChild(wrap);
+
+    // 画像の横に「message」（テキスト）も並べたい場合は下を有効化
+    // const cap = document.createElement('span');
+    // cap.textContent = ' ' + (c?.message ?? '');
+    // itemRow.appendChild(cap);
+
+    li.appendChild(itemRow);
+  }
+
+
+
   elList.insertBefore(li, elList.firstChild); // 先頭に追加＝最新が上
 
   // 件数制限（古い方＝末尾から削除）
