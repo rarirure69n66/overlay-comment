@@ -122,11 +122,25 @@ async function readGistText(){
 }
 
 function showLatest(c){
+  // ユーザー名
   const user = c?.user?.name ?? c?.user_name ?? "匿名";
-  const text = c?.text ?? c?.body ?? JSON.stringify(c);
-  const t    = c?.created_at || c?.updated_at || c?.time || "";
-  elLatest.innerHTML = `<div><strong>${escapeHtml(user)}</strong>：${escapeHtml(text)}</div><div class="meta">${escapeHtml(t)}</div>`;
+
+  // 本文（WhoWatchは message / escaped_message を優先）
+  const msg = c?.message ?? c?.escaped_message ?? c?.text ?? c?.body ?? "(メッセージなし)";
+
+  // 時刻（posted_at はミリ秒エポック）
+  let t = "";
+  if (typeof c?.posted_at === "number") {
+    t = new Date(c.posted_at).toLocaleString();       // 端末ローカル時刻で表示
+  } else {
+    t = c?.created_at || c?.updated_at || c?.time || "";
+  }
+
+  elLatest.innerHTML =
+    `<div><strong>${escapeHtml(user)}</strong>：${escapeHtml(msg)}</div>` +
+    `<div class="meta">${escapeHtml(t)}</div>`;
 }
+
 
 // ===== 変換＋ポーリング =====
 let apiUrl = "";
@@ -167,15 +181,22 @@ async function pollOnce(){
   if(Array.isArray(arr) && arr.length){
     arr.sort((a,b)=> new Date(a.created_at||a.updated_at||0) - new Date(b.created_at||b.updated_at||0));
     const latest = arr[arr.length - 1];
+    
     showLatest(latest);
-
+    
+    // カーソル更新（APIが返すものを優先）
     let nextCur = json.last_updated_at || json.cursor || null;
-    if(!nextCur){
-      const t = latest.created_at || latest.updated_at || latest.time;
-      nextCur = t ? new Date(t).toISOString() : null;
+    if (!nextCur) {
+      if (typeof latest.posted_at === "number") {
+        nextCur = new Date(latest.posted_at).toISOString();   // posted_at(ms) → ISO
+      } else {
+        const t = latest.created_at || latest.updated_at || latest.time;
+        nextCur = t ? new Date(t).toISOString() : null;
+      }
     }
-    if(nextCur) lastCur = String(nextCur);
+    if (nextCur) lastCur = String(nextCur);
   }
+  
   setStatus(`OK live:${liveId} last:${lastCur||"<全取得>"}`);
 }
 
@@ -207,3 +228,4 @@ async function loop(){
 </script>
 </body>
 </html>
+
