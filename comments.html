@@ -8,11 +8,13 @@
   html,body{margin:0;background:#0b0b0b;color:#fff;font-family:sans-serif;height:100%}
   /* 左端の固定ウィンドウ */
   #panel{
-    position:fixed; left:0; top:10vh;   /* 上10%余白 → 高さ80% */
-    width:30vw; height:80vh;            /* 横30% × 縦80% */
+    position:fixed; left:0; top:10vh;
+    width:30vw; height:80vh;
     box-sizing:border-box; padding:10px 12px;
-    background:rgba(0,0,0,.55); border-right:1px solid #333;
-    overflow-y:auto;                     /* 中はスクロール可（バーは隠す） */
+    background:rgba(0,0,0,.55);
+    /* border-right:1px solid #333;  ←削除 */
+    **border-right:none;**
+    overflow-y:auto;
     scrollbar-width:none; -ms-overflow-style:none;
   }
   #panel::-webkit-scrollbar{ width:0; height:0 }
@@ -296,3 +298,4 @@ async function loop(){
 </script>
 </body>
 </html>
+
