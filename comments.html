@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<title>WhoWatch コメント（古い→新しい／左30%・縦80%）</title>
+<title>WhoWatch コメント（新しい→上／左30%・縦80%）</title>
 <style>
   html,body{margin:0;background:#0b0b0b;color:#fff;font-family:sans-serif;height:100%}
   /* 左端の固定ウィンドウ */
@@ -21,10 +21,10 @@
   }
   #panel::-webkit-scrollbar{ width:0; height:0 } /* Chrome/Safari/Edge */
 
-  /* 見出しや状態は非表示にする */
+  /* 見出しや状態は非表示 */
   #title, #status { display:none; }
 
-  /* リスト（古い→新しい。新着は末尾に追加） */
+  /* リスト（上＝最新） */
   ul#list{list-style:none; padding:0; margin:0}
   ul#list li{
     margin:8px 0; padding:8px 10px;
@@ -36,7 +36,7 @@
   .msg{white-space:pre-wrap; word-break:break-word}
   .meta{font-size:11px; opacity:.7; margin-top:4px}
 
-  /* エラー表示（必要なら残す。不要なら display:none; でもOK） */
+  /* エラー表示（不要なら display:none; にしてOK） */
   #err{color:#ff8a8a; font-size:12px; white-space:pre-wrap; margin:4px 0 8px; display:none;}
 </style>
 </head>
@@ -60,10 +60,9 @@ const RAW_GIST = `https://gist.githubusercontent.com/${USER}/${GISTID}/raw/curre
 const API_GIST = `https://api.github.com/gists/${GISTID}`;
 
 const elList   = document.getElementById('list');
-const elStatus = document.getElementById('status');
 const elErr    = document.getElementById('err');
 
-function setStatus(_){} // 画面には出さない
+function setStatus(_){/* 非表示 */}
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 /* URL→id抽出＆プロキシURL生成 */
@@ -99,8 +98,8 @@ async function readGistText(){
   }
 }
 
-/* 表示：末尾に追加（＝古い→新しい。新着は下に積む） */
-function appendComment(c){
+/* 表示：先頭に追加（＝最新が一番上） */
+function prependComment(c){
   const li = document.createElement('li');
   const user = c?.user?.name ?? c?.user_name ?? "匿名";
   const msg  = c?.message ?? c?.escaped_message ?? c?.text ?? c?.body ?? "(メッセージなし)";
@@ -111,10 +110,10 @@ function appendComment(c){
     `<div class="user">${escapeHtml(user)}</div>` +
     `<div class="msg">${escapeHtml(msg)}</div>` +
     `<div class="meta">${escapeHtml(ts)}</div>`;
-  elList.appendChild(li); // ← 末尾に追加＝最新は下
-  // 件数制限（必要なら）
+  elList.insertBefore(li, elList.firstChild); // ← 先頭に入れる＝最新が上
+  // 件数制限：古い方（末尾）から削除
   const MAX = 80;
-  while (elList.childElementCount > MAX) elList.removeChild(elList.firstChild);
+  while (elList.childElementCount > MAX) elList.removeChild(elList.lastChild);
 }
 
 /* ===== 変換＋ポーリング ===== */
@@ -129,7 +128,6 @@ function idOf(c){
 }
 
 async function init(){
-  elErr.textContent = "";
   const txt = await readGistText();
   const first = (txt.split(/\r?\n/).map(s=>s.trim()).find(Boolean)) || "";
   const built = buildApiUrlFromSource(first);
@@ -171,24 +169,27 @@ async function pollOnce(){
   }
 
   if(Array.isArray(arr) && arr.length){
-    // 古→新に並べ直し
+    // 古→新に並べ替え（=時系列）
     arr.sort((a,b)=>{
       const ta = (typeof a.posted_at==="number") ? a.posted_at : +new Date(a.created_at||a.updated_at||0);
       const tb = (typeof b.posted_at==="number") ? b.posted_at : +new Date(b.created_at||b.updated_at||0);
       return ta - tb;
     });
 
-    // 未表示のものだけ末尾に追加
+    // 未表示のものだけ取得し、時系列のまま「先頭に挿入」。
+    // ※ oldest→newest の順で prepend すると、最後に処理した newest が最上段になる
+    const newly = [];
     for(const c of arr){
       const id = idOf(c);
       if(seen.has(id)) continue;
       seen.add(id);
-      appendComment(c);
+      newly.push(c);
     }
+    for(const c of newly){ prependComment(c); }
 
     // カーソル更新（サーバ返却を優先）
     let nextCur = json.last_updated_at || json.cursor || null;
-    if(!nextCur){
+    if(!nextCur && arr.length){
       const last = arr[arr.length-1];
       if (typeof last.posted_at === "number") nextCur = new Date(last.posted_at).toISOString();
       else {
