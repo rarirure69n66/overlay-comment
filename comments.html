@@ -3,61 +3,35 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<title>WhoWatch コメント（最新が上／左30%×縦80%／安全IMG）</title>
+<title>WhoWatch コメント（最新が上＋弾幕）</title>
 <style>
   html,body{
-    margin: 0;
-    padding: 0;
-    width: 100vw;
-    height: 100vh;
-    background:transparent; /* ←透明に変更 */
-    color:#fff;
-    font-family:sans-serif;
-    height:100%;
+    margin:0; padding:0; width:100vw; height:100vh;
+    background:transparent; color:#fff; font-family:sans-serif;
   }
-  
+  /* 左端のパネル：横30% × 縦80%、背景透明、スクロールバー非表示 */
   #panel{
-    position:fixed; left:0; top:10vh;
-    width:30vw; height:80vh;
+    position:fixed; left:0; top:10vh; width:30vw; height:80vh;
     box-sizing:border-box; padding:10px 12px;
-    background:transparent; /* ←透明に変更 */
-    border-right:none;
-    overflow-y:auto;
-    scrollbar-width:none; -ms-overflow-style:none;
+    background:transparent; border:none;
+    overflow-y:auto; scrollbar-width:none; -ms-overflow-style:none;
   }
   #panel::-webkit-scrollbar{ width:0; height:0 }
+  #title, #status{ display:none; } /* 見出し/ステータスは非表示 */
 
-  /* ヘッダー/ステータスは非表示（必要なら表示可） */
-  #title, #status{ display:none; }
-
-  /* コメントリスト（最新を上＝先頭に追加） */
-  ul#list{list-style:none; padding:0; margin:0}
+  /* コメント表示（最新が上＝先頭に追加） */
+  ul#list{ list-style:none; padding:0; margin:0 }
   ul#list li{
     margin:8px 0; padding:8px 10px;
     background:rgba(0,0,0,.4);
     border-left:4px solid #ffeb66; border-radius:10px;
   }
+  .user{ font-weight:700; font-size:26px; }
+  .msg{ white-space:pre-wrap; word-break:break-word; font-size:30px; }
+  .meta{ font-size:20px; opacity:.7; margin-top:4px; }
+  .msg img.emoji{ vertical-align:text-bottom; width:1.5em; height:1.5em; } /* 絵文字用 */
 
-  .msg{
-    white-space:pre-wrap;
-    word-break:break-word;
-    font-size: 30px; /* ←本文だけ別で調整可能 */
-  }
-  .user{
-    font-weight:700;
-    font-size: 26px; /* ←ユーザー名のサイズ */
-  }
-  
-  .meta{
-    font-size: 20px; /* ←日時や付帯情報のサイズ */
-    opacity:.7;
-    margin-top:4px;
-  }
-  /* 絵文字画像の統一スタイル（style属性は捨てるのでCSSで指定） */
-  .msg img.emoji{ vertical-align:text-bottom; width:1.5em; height:1.5em; }
-
-  /* エラー表示は隠す（必要時だけ開発者ツールで確認） */
-  #err{display:none;}
+  #err{ display:none; } /* エラーは画面には出さない（コンソールで確認） */
 </style>
 </head>
 <body>
@@ -67,6 +41,9 @@
   <div id="err"></div>
   <ul id="list"></ul>
 </div>
+
+<!-- 先にGSAPを読み込む（defer：記述順で実行される） -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
 
 <script>
 /* ====== 設定（あなたの値）====== */
@@ -80,11 +57,53 @@ const RAW_GIST = `https://gist.githubusercontent.com/${USER}/${GISTID}/raw/curre
 const API_GIST = `https://api.github.com/gists/${GISTID}`;
 
 const elList = document.getElementById('list');
-const elErr  = document.getElementById('err');
 
-function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
+/* ---------- 弾幕（右→左に流す：messageだけ） ---------- */
+let dmCount = 0;
+const laneHeight = 36;    // 1行の高さ
+const lanePadding = 6;    // 行間
+const lanesInUse = new Set();
+function pickFreeLane(aroundY = window.innerHeight/2){
+  const total = Math.max(1, Math.floor(window.innerHeight / (laneHeight + lanePadding)));
+  const centerIdx = Math.max(0, Math.min(total-1, Math.floor(aroundY / (laneHeight + lanePadding))));
+  const order = [];
+  for (let d=0; d<total; d++){
+    if (centerIdx - d >= 0) order.push(centerIdx - d);
+    if (centerIdx + d < total) order.push(centerIdx + d);
+  }
+  for (const idx of order){
+    if (!lanesInUse.has(idx)) { lanesInUse.add(idx); return { idx, top: idx*(laneHeight+lanePadding)+10 }; }
+  }
+  const fallback = total-1;
+  lanesInUse.add(fallback);
+  return { idx:fallback, top:fallback*(laneHeight+lanePadding)+10 };
+}
 
-/* ---------- 安全サニタイザ（限定的にHTML許可） ---------- */
+async function flowMessage(messageText, aroundY){
+  if (!messageText) return;
+  const div = document.createElement('div');
+  const id = "dm" + (dmCount++);
+  div.id = id;
+  div.style.position='fixed'; div.style.zIndex='5'; div.style.whiteSpace='nowrap';
+  div.style.pointerEvents='none'; div.style.fontWeight='700';
+  div.style.textShadow='0 2px 4px rgba(0,0,0,.7)';
+  div.style.fontSize='28px'; div.style.color='#fff';
+  div.style.left = document.documentElement.clientWidth + 'px';
+  const lane = pickFreeLane(aroundY ?? window.innerHeight/2);
+  div.style.top = lane.top + 'px';
+  div.appendChild(document.createTextNode(String(messageText)));
+  document.body.appendChild(div);
+  const distance = document.documentElement.clientWidth + div.clientWidth + 20;
+  const duration = 7; // 秒
+  try{
+    await gsap.to("#"+id, { duration, x:-distance, ease:"none" });
+  }finally{
+    lanesInUse.delete(lane.idx);
+    div.remove();
+  }
+}
+
+/* ---------- サニタイザ（限定的にHTML許可：IMG/A/BRなど） ---------- */
 function sanitizeMessageHTML(raw){
   if (!/[<>&]/.test(raw)) return document.createTextNode(raw);
   const parser = new DOMParser();
@@ -92,7 +111,7 @@ function sanitizeMessageHTML(raw){
   const root = doc.body.firstChild;
 
   const allowedTags = new Set(["BR","IMG","B","I","U","STRONG","EM","A","SPAN"]);
-  const allowedImgHostSuffix = [".whowatch.tv"]; // img.whowatch.tv 等
+  const allowedImgHostSuffix = [".whowatch.tv"];
   const frag = document.createDocumentFragment();
 
   function isAllowedImgSrc(urlStr){
@@ -103,10 +122,7 @@ function sanitizeMessageHTML(raw){
     }catch{ return false; }
   }
   function walk(node, outParent){
-    if (node.nodeType === Node.TEXT_NODE){
-      outParent.appendChild(document.createTextNode(node.nodeValue));
-      return;
-    }
+    if (node.nodeType === Node.TEXT_NODE){ outParent.appendChild(document.createTextNode(node.nodeValue)); return; }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
 
     const tag = node.tagName;
@@ -117,15 +133,11 @@ function sanitizeMessageHTML(raw){
     if (tag === "BR"){ outParent.appendChild(document.createElement("br")); return; }
     if (tag === "IMG"){
       const src = node.getAttribute("src") || "";
-      if (!isAllowedImgSrc(src)){
-        outParent.appendChild(document.createTextNode("[img blocked]"));
-        return;
-      }
+      if (!isAllowedImgSrc(src)){ outParent.appendChild(document.createTextNode("[img blocked]")); return; }
       const img = document.createElement("img");
       img.src = src;
       if (src.includes("/emoji/")) img.className = "emoji";
-      img.referrerPolicy = "no-referrer";
-      img.loading = "lazy";
+      img.referrerPolicy = "no-referrer"; img.loading = "lazy";
       outParent.appendChild(img);
       return;
     }
@@ -135,7 +147,7 @@ function sanitizeMessageHTML(raw){
         const u = new URL(href, location.href);
         if (u.protocol !== "https:") throw 0;
         const a = document.createElement("a");
-        a.href = u.href; a.target = "_blank"; a.rel = "noopener noreferrer";
+        a.href = u.href; a.target="_blank"; a.rel="noopener noreferrer";
         for (const child of [...node.childNodes]) walk(child, a);
         outParent.appendChild(a);
       }catch{
@@ -143,7 +155,6 @@ function sanitizeMessageHTML(raw){
       }
       return;
     }
-    // B/I/U/STRONG/EM/SPAN は属性無しでそのまま許可
     const safe = document.createElement(tag.toLowerCase());
     for (const child of [...node.childNodes]) walk(child, safe);
     outParent.appendChild(safe);
@@ -152,16 +163,16 @@ function sanitizeMessageHTML(raw){
   return frag;
 }
 
-/* ---------- Gist からURLを取得 ---------- */
+/* ---------- Gistから元URLを取得 ---------- */
 async function readGistText(){
   try{
-    const res = await fetch(API_GIST, { headers: { "Accept":"application/vnd.github+json" }, cache:"no-store" });
+    const res = await fetch(API_GIST, { headers:{ "Accept":"application/vnd.github+json" }, cache:"no-store" });
     if(!res.ok) throw new Error(`Gist API ${res.status}`);
     const j = await res.json();
     const f = j.files?.["current.txt"];
     if (!f) throw new Error("Gistに current.txt がありません");
     if (f.truncated === false && typeof f.content === "string") return f.content.trim();
-    if (f.raw_url) {
+    if (f.raw_url){
       const r = await fetch(f.raw_url + "?t=" + Date.now(), { cache:"no-store" });
       if(!r.ok) throw new Error(`Gist RAW ${r.status}`);
       return (await r.text()).trim();
@@ -185,7 +196,7 @@ function buildApiUrlFromSource(u){
   return { id, url: `${WORKER_BASE}${id}?last_updated_at=` };
 }
 
-/* ---------- 表示：最新を上に（先頭に追加） ---------- */
+/* ---------- 表示（最新を上：先頭に追加） ---------- */
 function prependComment(c){
   const li   = document.createElement('li');
   const user = c?.user?.name ?? c?.user_name ?? "匿名";
@@ -194,33 +205,24 @@ function prependComment(c){
                 ? new Date(c.posted_at).toLocaleString()
                 : (c?.created_at || c?.updated_at || c?.time || "");
 
-  const userDiv = document.createElement('div');
-  userDiv.className = "user";
-  userDiv.textContent = user;
+  const userDiv = document.createElement('div'); userDiv.className = "user"; userDiv.textContent = user;
+  const msgDiv  = document.createElement('div'); msgDiv.className  = "msg";
+  msgDiv.appendChild(sanitizeMessageHTML(msg));
+  const metaDiv = document.createElement('div'); metaDiv.className = "meta"; metaDiv.textContent = ts;
 
-  const msgDiv = document.createElement('div');
-  msgDiv.className = "msg";
-  msgDiv.appendChild(sanitizeMessageHTML(msg)); // 安全にHTML反映
-
-  const metaDiv = document.createElement('div');
-  metaDiv.className = "meta";
-  metaDiv.textContent = ts;
-
-  li.appendChild(userDiv);
-  li.appendChild(msgDiv);
-  li.appendChild(metaDiv);
-
+  li.appendChild(userDiv); li.appendChild(msgDiv); li.appendChild(metaDiv);
   elList.insertBefore(li, elList.firstChild); // 先頭に追加＝最新が上
+
   // 件数制限（古い方＝末尾から削除）
   const MAX = 80;
   while (elList.childElementCount > MAX) elList.removeChild(elList.lastChild);
 }
 
-/* ---------- 増分取得ロジック（last_updated_at は UNIXミリ秒） ---------- */
+/* ---------- 取得・増分（last_updated_at = UNIXミリ秒） ---------- */
 let apiUrl = "", liveId = "";
-let lastCurMs = null;   // ★ 常に「UNIXミリ秒」を保持
-let etag   = null;      // 必要に応じて使う（不安定なら無効化してOK）
-let seen   = new Set(); // 重複防止
+let lastCurMs = null;   // 常にUNIXミリ秒
+let etag   = null;      // 相性悪ければ無効化OK
+let seen   = new Set(); // 重複排除
 
 function idOf(c){
   return c?.id ?? `${c?.user?.id||c?.user_id||"u"}-${c?.posted_at||c?.created_at||c?.updated_at||Math.random()}`;
@@ -237,15 +239,13 @@ async function init(){
   const first = (txt.split(/\r?\n/).map(s=>s.trim()).find(Boolean)) || "";
   const built = buildApiUrlFromSource(first);
   if (!built) throw new Error("対応外URL: " + first);
-  apiUrl   = built.url;
-  liveId   = built.id;
-  lastCurMs = null; // リセット＝最初から取得
+  apiUrl = built.url; liveId = built.id; lastCurMs = null; // 全取得スタート
 }
 
 async function pollOnce(){
   const url = apiUrl + encodeURIComponent(lastCurMs != null ? String(lastCurMs) : "");
   const headers = {"cache-control":"no-store"};
-  if (etag) headers["If-None-Match"] = etag; // もし相性悪ければこの行と下の etag 行をコメントアウト
+  if (etag) headers["If-None-Match"] = etag; // 問題あればこの行と下のetag代入をコメントアウト
 
   const res = await fetch(url, { headers });
   if (res.status === 304) return;
@@ -254,7 +254,7 @@ async function pollOnce(){
   etag = res.headers.get("etag") || etag;
   const json = await res.json();
 
-  // コメント配列（comments / data / 自動探索）
+  // コメント配列を検出
   let arr = Array.isArray(json.comments) ? json.comments
           : Array.isArray(json.data)     ? json.data
           : null;
@@ -274,7 +274,7 @@ async function pollOnce(){
   }
   if (!Array.isArray(arr) || !arr.length) return;
 
-  // 時系列でソート（古→新）。その順で先頭に挿入すると、最後に入った最新が一番上に来る
+  // 古→新に並べて、新着だけ処理
   arr.sort((a,b)=> tsMs(a) - tsMs(b));
 
   const newly = [];
@@ -284,9 +284,17 @@ async function pollOnce(){
     seen.add(id);
     newly.push(c);
   }
+
+  // 画面パネル（最新上）に追加
   for (const c of newly){ prependComment(c); }
 
-  // カーソル更新（サーバ返却優先 → 無ければ最後のコメント時刻）
+  // 弾幕（messageだけ）を右→左に流す
+  //for (const c of newly){
+    //const msgOnly = c?.message ?? "";
+    //if (msgOnly) flowMessage(msgOnly);
+  //}
+
+  // カーソル更新（サーバ返却を優先→無ければ最後のコメント時刻）
   let nextCurMs = null;
   if (json.last_updated_at != null){
     const n = Number(json.last_updated_at);
@@ -295,13 +303,12 @@ async function pollOnce(){
   if (nextCurMs == null && arr.length){
     nextCurMs = tsMs(arr[arr.length - 1]);
   }
-  // 取りこぼし防止で 1ms 引く（include 境界対策）
-  if (nextCurMs != null) lastCurMs = nextCurMs - 1;
+  if (nextCurMs != null) lastCurMs = nextCurMs - 1; // 取りこぼし防止で1ms引く
 }
 
 async function loop(){
   while(true){
-    try{ await pollOnce(); } catch(e){ /* 画面には出さない（必要なら console.error(e)）*/ }
+    try{ await pollOnce(); } catch(e){ console.error(e); }
     await new Promise(r=>setTimeout(r, POLL_MS));
   }
 }
@@ -312,92 +319,9 @@ async function loop(){
     await pollOnce();
     loop();
   }catch(e){
-    // 初期化失敗時のみ開発者ツールで確認
     console.error("init error:", e);
   }
 })();
 </script>
-
-
-  <script>
-// ===== 弾幕（右→左に流す） =====
-let dmCount = 0;
-
-// かぶり防止用のレーン管理（画面高を等分）
-const laneHeight = 36;           // 1行の高さ（お好みで）
-const lanePadding = 6;           // 行間
-const lanesInUse = new Set();    // 使用中レーンindex
-function pickFreeLane(aroundY = window.innerHeight/2){
-  const total = Math.max(1, Math.floor(window.innerHeight / (laneHeight + lanePadding)));
-  // 中心に近いレーンから探す
-  const centerIdx = Math.max(0, Math.min(total-1, Math.floor(aroundY / (laneHeight + lanePadding))));
-  const order = [];
-  for (let d=0; d<total; d++){
-    if (centerIdx - d >= 0) order.push(centerIdx - d);
-    if (centerIdx + d < total) order.push(centerIdx + d);
-  }
-  for (const idx of order){
-    if (!lanesInUse.has(idx)) { lanesInUse.add(idx); return { idx, top: idx*(laneHeight+lanePadding)+10 }; }
-  }
-  // 全部埋まってたら一番下を使う
-  const fallback = total-1;
-  lanesInUse.add(fallback);
-  return { idx: fallback, top: fallback*(laneHeight+lanePadding)+10 };
-}
-
-// ★ messageだけを流す（生HTMLは使わず安全にテキストノードで）
-async function flowMessage(messageText, aroundY /* 任意: アイコン中心など */){
-  if (!messageText) return;
-
-  const div = document.createElement('div');
-  const id = "dm" + (dmCount++);
-  div.id = id;
-  div.style.position   = 'fixed';
-  div.style.zIndex     = '5';
-  div.style.whiteSpace = 'nowrap';
-  div.style.pointerEvents = 'none';       // クリック貫通
-  div.style.fontWeight = '700';           // 見やすく
-  div.style.textShadow = '0 2px 4px rgba(0,0,0,.7)';
-  div.style.fontSize   = '20px';          // サイズはお好みで
-  div.style.color      = '#fff';
-
-  // 画面右端スタート
-  div.style.left = document.documentElement.clientWidth + 'px';
-
-  // レーン決定（重なり軽減）
-  const lane = pickFreeLane(aroundY ?? window.innerHeight/2);
-  div.style.top = lane.top + 'px';
-
-  // テキストノード（安全：HTMLは解釈しない）
-  div.appendChild(document.createTextNode(String(messageText)));
-
-  document.body.appendChild(div);
-
-  // 横幅を取得してからアニメーション
-  const distance = document.documentElement.clientWidth + div.clientWidth + 20;
-  const duration = 7; // 秒（調整可）
-
-  try{
-    await gsap.to("#" + id, { duration, x: -distance, ease: "none" });
-  } finally {
-    // レーン開放 & DOM除去
-    lanesInUse.delete(lane.idx);
-    div.remove();
-  }
-}
-</script>
-
-
-  
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
-
 </body>
 </html>
-
-
-
-
-
-
-
-
