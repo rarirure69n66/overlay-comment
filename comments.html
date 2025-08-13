@@ -34,9 +34,22 @@
     background:rgba(0,0,0,.6);
     border-left:4px solid #ffeb66; border-radius:10px;
   }
-  .user{font-weight:700}
-  .msg{white-space:pre-wrap; word-break:break-word}
-  .meta{font-size:11px; opacity:.7; margin-top:4px}
+
+  .msg{
+    white-space:pre-wrap;
+    word-break:break-word;
+    font-size: 24px; /* ←本文だけ別で調整可能 */
+  }
+  .user{
+    font-weight:700;
+    font-size: 22px; /* ←ユーザー名のサイズ */
+  }
+  
+  .meta{
+    font-size: 10px; /* ←日時や付帯情報のサイズ */
+    opacity:.7;
+    margin-top:4px;
+  }
   /* 絵文字画像の統一スタイル（style属性は捨てるのでCSSで指定） */
   .msg img.emoji{ vertical-align:text-bottom; width:1.5em; height:1.5em; }
 
@@ -303,5 +316,6 @@ async function loop(){
 </script>
 </body>
 </html>
+
 
 
