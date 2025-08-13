@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -28,11 +27,30 @@
     border-left:4px solid #ffeb66; border-radius:10px;
   }
   .user{ font-weight:700; font-size:38px; }
-  .msg{ white-space:pre-wrap; word-break:break-word; font-size:40px; }
+
+  /* 本文＋アイテム画像を横並び。space-betweenで右端に画像が寄る */
+  .msg{
+    white-space:pre-wrap;
+    word-break:break-word;
+    font-size:40px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+  }
   .meta{ font-size:20px; opacity:.7; margin-top:4px; }
   .msg img.emoji{ vertical-align:text-bottom; width:1.5em; height:1.5em; } /* 絵文字用 */
 
   #err{ display:none; } /* エラーは画面には出さない（コンソールで確認） */
+
+  /* アイテム画像（本文右側に回り込み） */
+  .item-img{ height:80px; width:auto; image-rendering:auto; }
+  .item-img-wrap{ position:relative; display:inline-block; }
+  .item-count{
+    position:absolute; right:-8px; bottom:-8px;
+    font-size:12px; padding:2px 6px; border-radius:9999px;
+    background:rgba(0,0,0,.6); border:1px solid #ffeb66; color:#fff;
+  }
 </style>
 </head>
 <body>
@@ -43,7 +61,6 @@
   <ul id="list"></ul>
 </div>
 
-  
 <!-- 先にGSAPを読み込む（defer：記述順で実行される） -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
 
@@ -60,10 +77,10 @@ const API_GIST = `https://api.github.com/gists/${GISTID}`;
 
 const elList = document.getElementById('list');
 
-/* ---------- 弾幕（右→左に流す：messageだけ） ---------- */
+/* ---------- 弾幕（右→左に流す：messageだけ） ※今は呼び出し部をコメントアウト ---------- */
 let dmCount = 0;
-const laneHeight = 36;    // 1行の高さ
-const lanePadding = 6;    // 行間
+const laneHeight = 36;
+const lanePadding = 6;
 const lanesInUse = new Set();
 function pickFreeLane(aroundY = window.innerHeight/2){
   const total = Math.max(1, Math.floor(window.innerHeight / (laneHeight + lanePadding)));
@@ -210,52 +227,36 @@ function prependComment(c){
   const userDiv = document.createElement('div'); userDiv.className = "user"; userDiv.textContent = user;
   const msgDiv  = document.createElement('div'); msgDiv.className  = "msg";
   msgDiv.appendChild(sanitizeMessageHTML(msg));
-  const metaDiv = document.createElement('div'); metaDiv.className = "meta"; metaDiv.textContent = ts;
 
-  li.appendChild(userDiv); li.appendChild(msgDiv); li.appendChild(metaDiv);
-  
-    // --- ★ アイテム画像（play_item_pattern.image_url）を表示 ---
+  /* --- ★ アイテム画像を本文右側に回り込ませる（msgDiv内に追加） --- */
   const itemImgUrl =
     c?.play_item_pattern?.image_url ||
     c?.play_item?.image_url ||
     null;
-
   const itemCount = Number(c?.item_count || 0);
-
-  if (itemImgUrl) {
-    const itemRow  = document.createElement('div');
-    itemRow.className = 'item';
-
+  if (itemImgUrl){
     const wrap = document.createElement('span');
     wrap.className = 'item-img-wrap';
-
     const img = new Image();
     img.src = itemImgUrl;
     img.className = 'item-img';
     img.referrerPolicy = 'no-referrer';
     img.loading = 'lazy';
-
     wrap.appendChild(img);
-
-    // 個数が 2 以上ならバッジ表示
-    if (itemCount >= 2) {
+    if (itemCount >= 2){
       const badge = document.createElement('span');
       badge.className = 'item-count';
       badge.textContent = 'x' + itemCount;
       wrap.appendChild(badge);
     }
-
-    itemRow.appendChild(wrap);
-
-    // 画像の横に「message」（テキスト）も並べたい場合は下を有効化
-    // const cap = document.createElement('span');
-    // cap.textContent = ' ' + (c?.message ?? '');
-    // itemRow.appendChild(cap);
-
-    li.appendChild(itemRow);
+    msgDiv.appendChild(wrap); // ← テキストの右側に表示
   }
 
+  const metaDiv = document.createElement('div'); metaDiv.className = "meta"; metaDiv.textContent = ts;
 
+  li.appendChild(userDiv);
+  li.appendChild(msgDiv);
+  li.appendChild(metaDiv);
 
   elList.insertBefore(li, elList.firstChild); // 先頭に追加＝最新が上
 
@@ -266,9 +267,9 @@ function prependComment(c){
 
 /* ---------- 取得・増分（last_updated_at = UNIXミリ秒） ---------- */
 let apiUrl = "", liveId = "";
-let lastCurMs = null;   // 常にUNIXミリ秒
-let etag   = null;      // 相性悪ければ無効化OK
-let seen   = new Set(); // 重複排除
+let lastCurMs = null;
+let etag   = null;
+let seen   = new Set();
 
 function idOf(c){
   return c?.id ?? `${c?.user?.id||c?.user_id||"u"}-${c?.posted_at||c?.created_at||c?.updated_at||Math.random()}`;
@@ -291,7 +292,7 @@ async function init(){
 async function pollOnce(){
   const url = apiUrl + encodeURIComponent(lastCurMs != null ? String(lastCurMs) : "");
   const headers = {"cache-control":"no-store"};
-  if (etag) headers["If-None-Match"] = etag; // 問題あればこの行と下のetag代入をコメントアウト
+  if (etag) headers["If-None-Match"] = etag; // 相性悪ければこの行と下のetag代入をコメントアウト
 
   const res = await fetch(url, { headers });
   if (res.status === 304) return;
@@ -334,11 +335,13 @@ async function pollOnce(){
   // 画面パネル（最新上）に追加
   for (const c of newly){ prependComment(c); }
 
-  // 弾幕（messageだけ）を右→左に流す
-  //for (const c of newly){
-    //const msgOnly = c?.message ?? "";
-    //if (msgOnly) flowMessage(msgOnly);
-  //}
+  // 弾幕（messageだけ）を右→左に流す（使う場合はコメントアウト解除）
+  /*
+  for (const c of newly){
+    const msgOnly = c?.message ?? "";
+    if (msgOnly) flowMessage(msgOnly);
+  }
+  */
 
   // カーソル更新（サーバ返却を優先→無ければ最後のコメント時刻）
   let nextCurMs = null;
@@ -371,6 +374,3 @@ async function loop(){
 </script>
 </body>
 </html>
-
-
-
