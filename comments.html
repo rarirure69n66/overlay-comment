@@ -3,81 +3,70 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<title>WhoWatch URL→API変換＋最新コメント（GitHub版）</title>
+<title>WhoWatch コメント（古い→新しい／左30%・縦80%）</title>
 <style>
-  html,body{margin:0;padding:0;background:#0b0b0b;color:#fff;font-family:sans-serif}
-  .wrap{padding:16px;max-width:900px;margin:0 auto}
-  h1{font-size:18px;margin:0 0 12px}
-  .small{opacity:.75;font-size:12px}
-  .box{background:#111;border:1px solid #333;border-radius:10px;padding:12px;margin:10px 0;word-break:break-all}
-  .label{font-size:12px;opacity:.85;margin-bottom:6px}
-  .row{margin:6px 0;padding:10px 14px;background:rgba(0,0,0,.6);border-left:4px solid #ffeb66;border-radius:10px;max-width:92vw}
-  .meta{opacity:.7;font-size:12px;margin-top:4px}
-  .err{color:#ff8a8a;white-space:pre-wrap}
-  code{background:#222;padding:2px 4px;border-radius:4px}
+  html,body{margin:0;background:#0b0b0b;color:#fff;font-family:sans-serif;height:100%}
+  /* 左端の固定ウィンドウ */
+  #panel{
+    position:fixed; left:0; top:10vh;   /* 画面上から10%下げる→高さ80%とセット */
+    width:30vw; height:80vh;            /* 横30% × 縦80% */
+    box-sizing:border-box;
+    padding:10px 12px;
+    background:rgba(0,0,0,.55);
+    border-right:1px solid #333;
+    overflow-y:auto;                     /* 中はスクロール可 */
+    /* ↓ スクロールバーを非表示（主要ブラウザ対応） */
+    scrollbar-width: none;               /* Firefox */
+    -ms-overflow-style: none;            /* IE/Edge旧 */
+  }
+  #panel::-webkit-scrollbar{ width:0; height:0 } /* Chrome/Safari/Edge */
+
+  /* 見出しや状態は非表示にする */
+  #title, #status { display:none; }
+
+  /* リスト（古い→新しい。新着は末尾に追加） */
+  ul#list{list-style:none; padding:0; margin:0}
+  ul#list li{
+    margin:8px 0; padding:8px 10px;
+    background:rgba(0,0,0,.6);
+    border-left:4px solid #ffeb66;
+    border-radius:10px;
+  }
+  .user{font-weight:700}
+  .msg{white-space:pre-wrap; word-break:break-word}
+  .meta{font-size:11px; opacity:.7; margin-top:4px}
+
+  /* エラー表示（必要なら残す。不要なら display:none; でもOK） */
+  #err{color:#ff8a8a; font-size:12px; white-space:pre-wrap; margin:4px 0 8px; display:none;}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>WhoWatch URL→API変換 ＋ 最新コメント</h1>
-
-  <div class="box">
-    <div class="label">Gist</div>
-    <div class="small">API: <span id="gist-api"></span></div>
-    <div class="small">RAW: <span id="gist-raw"></span></div>
-  </div>
-
-  <div class="box">
-    <div class="label">Gist内の元URL（複数行OK／先頭を使用）</div>
-    <div id="raw" class="small">(読込中)</div>
-  </div>
-
-  <div class="box">
-    <div class="label">変換結果（API URL or プロキシURL）</div>
-    <div id="converted" class="small"></div>
-  </div>
-
-  <div class="box">
-    <div class="label">最新コメント（アクセス時はリセット＝最初から取得→以後は増分）</div>
-    <div id="latest" class="row">待機中…</div>
-    <div id="status" class="small"></div>
-  </div>
-
-  <div id="err" class="err"></div>
-
-  <div class="box small">
-    <div class="label">メモ</div>
-    <div>
-      WhoWatch APIがブラウザのCORSを許可していない場合、ここでエラー表示になります。  
-      そのときは次の段階で「中継URL（WORKER_BASE）」を入れると動作します。
-    </div>
-  </div>
+<div id="panel">
+  <div id="title">最新コメント（上＝最新）</div>
+  <div id="status">初期化中…</div>
+  <div id="err"></div>
+  <ul id="list"></ul>
 </div>
 
 <script>
-/* ====== 設定（あなたの値）====== */
-const USER   = "rarirure69n66";
-const GISTID = "5697ca0fe833531c03c10ba6950f7d3e";
-const POLL_MS = 1500;
-/* —— 後で中継(Cloudflare Workers等)を作ったらここにベースURLを入れる —— */
-const WORKER_BASE = "https://whowatch-relay.win3100c.workers.dev/ww/lives/"; // ←末尾の / を忘れずに
-/* ================================== */
+/* ===== 設定 ===== */
+const USER        = "rarirure69n66";
+const GISTID      = "5697ca0fe833531c03c10ba6950f7d3e";
+const POLL_MS     = 1500;
+const WORKER_BASE = "https://whowatch-relay.win3100c.workers.dev/ww/lives/"; // 末尾 /
+/* ============== */
 
 const RAW_GIST = `https://gist.githubusercontent.com/${USER}/${GISTID}/raw/current.txt`;
 const API_GIST = `https://api.github.com/gists/${GISTID}`;
-document.getElementById('gist-api').textContent = API_GIST;
-document.getElementById('gist-raw').textContent = RAW_GIST;
 
-const elErr = document.getElementById('err');
-const elRaw = document.getElementById('raw');
-const elConv = document.getElementById('converted');
-const elLatest = document.getElementById('latest');
+const elList   = document.getElementById('list');
 const elStatus = document.getElementById('status');
+const elErr    = document.getElementById('err');
 
+function setStatus(_){} // 画面には出さない
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function setStatus(msg){ elStatus.textContent = msg; }
 
-// URL→id抽出＆API/プロキシURL生成
+/* URL→id抽出＆プロキシURL生成 */
 function buildApiUrlFromSource(u){
   const s=(u||"").trim();
   let m = s.match(/^https?:\/\/api\.whowatch\.tv\/lives\/(\d+)/);
@@ -85,31 +74,18 @@ function buildApiUrlFromSource(u){
   if(!m) m = s.match(/r\.whowatch\.tv\/lives\/(\d+)/);
   if(!m) return null;
   const id = m[1];
-  if (WORKER_BASE) {
-    // 中継を使う（CORS回避）
-    return { id, url: `${WORKER_BASE}${id}?last_updated_at=` };
-  } else {
-    // 直接WhoWatchへ（CORSで失敗する場合あり）
-    return { id, url: `https://api.whowatch.tv/lives/${id}?last_updated_at=` };
-  }
+  return { id, url: `${WORKER_BASE}${id}?last_updated_at=` };
 }
 
-// Gist読み（API優先→RAWフォールバック）
+/* Gist読み（API優先→RAWフォールバック） */
 async function readGistText(){
   try{
-    // 👇 ヘッダは Accept だけ。Cache-Control は付けない
-    const res = await fetch(API_GIST, {
-      headers: { "Accept":"application/vnd.github+json" },
-      cache: "no-store"     // ← こっちでキャッシュ無効化
-    });
+    const res = await fetch(API_GIST, { headers: { "Accept":"application/vnd.github+json" }, cache: "no-store" });
     if(!res.ok) throw new Error(`Gist API ${res.status}`);
     const j = await res.json();
     const f = j.files?.["current.txt"];
     if (!f) throw new Error("Gistに current.txt がありません");
-
-    if (f.truncated === false && typeof f.content === "string") {
-      return f.content.trim();
-    }
+    if (f.truncated === false && typeof f.content === "string") return f.content.trim();
     if (f.raw_url) {
       const r = await fetch(f.raw_url + "?t=" + Date.now(), { cache:"no-store" });
       if(!r.ok) throw new Error(`Gist RAW ${r.status}`);
@@ -117,108 +93,117 @@ async function readGistText(){
     }
     throw new Error("Gistファイルを読めません（raw_urlなし）");
   }catch(e){
-    // RAWフォールバック（こっちはそのままでOK）
-    try{
-      const r = await fetch(RAW_GIST + "?t=" + Date.now(), { cache:"no-store" });
-      if(!r.ok) throw new Error(`Gist RAW ${r.status}`);
-      return (await r.text()).trim();
-    }catch(e2){
-      throw new Error(`Gist取得失敗: ${e.message} / ${e2.message}`);
-    }
+    const r = await fetch(RAW_GIST + "?t=" + Date.now(), { cache:"no-store" });
+    if(!r.ok) throw new Error(`Gist RAW ${r.status} / ${e.message}`);
+    return (await r.text()).trim();
   }
 }
 
-
-function showLatest(c){
-  // ユーザー名
+/* 表示：末尾に追加（＝古い→新しい。新着は下に積む） */
+function appendComment(c){
+  const li = document.createElement('li');
   const user = c?.user?.name ?? c?.user_name ?? "匿名";
-
-  // 本文（WhoWatchは message / escaped_message を優先）
-  const msg = c?.message ?? c?.escaped_message ?? c?.text ?? c?.body ?? "(メッセージなし)";
-
-  // 時刻（posted_at はミリ秒エポック）
-  let t = "";
-  if (typeof c?.posted_at === "number") {
-    t = new Date(c.posted_at).toLocaleString();       // 端末ローカル時刻で表示
-  } else {
-    t = c?.created_at || c?.updated_at || c?.time || "";
-  }
-
-  elLatest.innerHTML =
-    `<div><strong>${escapeHtml(user)}</strong>：${escapeHtml(msg)}</div>` +
-    `<div class="meta">${escapeHtml(t)}</div>`;
+  const msg  = c?.message ?? c?.escaped_message ?? c?.text ?? c?.body ?? "(メッセージなし)";
+  const ts   = typeof c?.posted_at === "number"
+                ? new Date(c.posted_at).toLocaleString()
+                : (c?.created_at || c?.updated_at || c?.time || "");
+  li.innerHTML =
+    `<div class="user">${escapeHtml(user)}</div>` +
+    `<div class="msg">${escapeHtml(msg)}</div>` +
+    `<div class="meta">${escapeHtml(ts)}</div>`;
+  elList.appendChild(li); // ← 末尾に追加＝最新は下
+  // 件数制限（必要なら）
+  const MAX = 80;
+  while (elList.childElementCount > MAX) elList.removeChild(elList.firstChild);
 }
 
-
-// ===== 変換＋ポーリング =====
+/* ===== 変換＋ポーリング ===== */
 let apiUrl = "";
 let liveId = "";
-let lastCur = null;
+let lastCur = null;        // 初回はリセット（全取得）
 let etag   = null;
+let seen   = new Set();    // 重複防止
+
+function idOf(c){
+  return c?.id ?? `${c?.user?.id||c?.user_id||"u"}-${c?.posted_at||c?.created_at||c?.updated_at||Math.random()}`;
+}
 
 async function init(){
   elErr.textContent = "";
-  setStatus("初期化中…");
-
   const txt = await readGistText();
-  elRaw.textContent = txt || "(空です)";
   const first = (txt.split(/\r?\n/).map(s=>s.trim()).find(Boolean)) || "";
   const built = buildApiUrlFromSource(first);
   if (!built) throw new Error("対応外URL: " + first);
-
-  apiUrl = built.url;
-  liveId = built.id;
-
-  elConv.textContent = apiUrl;
+  apiUrl  = built.url;
+  liveId  = built.id;
   lastCur = null; // リセットして最初から
-  setStatus(`開始 live:${liveId} last:<全取得>`);
 }
 
 async function pollOnce(){
   const url = apiUrl + encodeURIComponent(lastCur || "");
-  const headers = {"cache-control":"no-cache"};
+  const headers = {"cache-control":"no-store"};
   if(etag) headers["If-None-Match"] = etag;
 
   const res = await fetch(url, { headers });
-  if(res.status === 304){ setStatus(`304 Not Modified / last:${lastCur||"<全取得>"}`); return; }
+  if(res.status === 304){ return; }
   if(!res.ok) throw new Error(`WhoWatch ${res.status}`);
+
   etag = res.headers.get("etag") || etag;
   const json = await res.json();
 
-  const arr = Array.isArray(json.comments) ? json.comments : (json.data || []);
+  // コメント配列（comments / data / 自動探索の保険）
+  let arr = Array.isArray(json.comments) ? json.comments
+          : Array.isArray(json.data)     ? json.data
+          : null;
+  if(!arr){
+    const find = (obj, depth=0) => {
+      if(depth>3 || !obj) return null;
+      if(Array.isArray(obj)){
+        const score = obj.slice(0,5).reduce((n,it)=> n + (it && (it.message||it.text||it.body) ? 1:0), 0);
+        return score>=2 ? obj : null;
+      }
+      if(typeof obj === "object"){
+        for(const k of Object.keys(obj)){ const f=find(obj[k], depth+1); if(f) return f; }
+      }
+      return null;
+    };
+    arr = find(json);
+  }
+
   if(Array.isArray(arr) && arr.length){
-    arr.sort((a,b)=> new Date(a.created_at||a.updated_at||0) - new Date(b.created_at||b.updated_at||0));
-    const latest = arr[arr.length - 1];
-    
-    showLatest(latest);
-    
-    // カーソル更新（APIが返すものを優先）
+    // 古→新に並べ直し
+    arr.sort((a,b)=>{
+      const ta = (typeof a.posted_at==="number") ? a.posted_at : +new Date(a.created_at||a.updated_at||0);
+      const tb = (typeof b.posted_at==="number") ? b.posted_at : +new Date(b.created_at||b.updated_at||0);
+      return ta - tb;
+    });
+
+    // 未表示のものだけ末尾に追加
+    for(const c of arr){
+      const id = idOf(c);
+      if(seen.has(id)) continue;
+      seen.add(id);
+      appendComment(c);
+    }
+
+    // カーソル更新（サーバ返却を優先）
     let nextCur = json.last_updated_at || json.cursor || null;
-    if (!nextCur) {
-      if (typeof latest.posted_at === "number") {
-        nextCur = new Date(latest.posted_at).toISOString();   // posted_at(ms) → ISO
-      } else {
-        const t = latest.created_at || latest.updated_at || latest.time;
+    if(!nextCur){
+      const last = arr[arr.length-1];
+      if (typeof last.posted_at === "number") nextCur = new Date(last.posted_at).toISOString();
+      else {
+        const t = last.created_at || last.updated_at || last.time;
         nextCur = t ? new Date(t).toISOString() : null;
       }
     }
-    if (nextCur) lastCur = String(nextCur);
+    if(nextCur) lastCur = String(nextCur);
   }
-  
-  setStatus(`OK live:${liveId} last:${lastCur||"<全取得>"}`);
 }
 
 async function loop(){
   while(true){
-    try{ await pollOnce(); }
-    catch(e){
-      // 典型：CORSで失敗（TypeError: Failed to fetch）
-      elErr.textContent = `poll失敗: ${e.message}\n` +
-        (WORKER_BASE ? "" :
-          "→ 多くの場合はCORSが原因です。後で WORKER_BASE に中継URLを入れると解決します。");
-      setStatus("取得停止（エラー）");
-      break; // 直接取得は一旦停止
-    }
+    try{ await pollOnce(); elErr.textContent=""; }
+    catch(e){ elErr.textContent = `poll失敗: ${e.message}`; }
     await new Promise(r=>setTimeout(r, POLL_MS));
   }
 }
@@ -230,11 +215,8 @@ async function loop(){
     loop();
   }catch(e){
     elErr.textContent = `初期化失敗: ${e.message}`;
-    setStatus("初期化失敗");
   }
 })();
 </script>
 </body>
 </html>
-
-
