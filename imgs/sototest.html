@@ -1,0 +1,55 @@
+﻿<!doctype html>
+<meta charset="utf-8">
+<h3>配信用データ送信（自分専用）</h3>
+<label>Personal Access Token (gist権限のみ)：<br>
+  <input id="token" type="password" placeholder="ghp_xxx" style="width:360px">
+</label>
+<button id="saveTok">保存</button>
+<br><br>
+
+<label>Gist ID：<br>
+  <input id="gistId" placeholder="abcdef123456..." style="width:360px">
+</label>
+<button id="saveGist">保存</button>
+<br><br>
+
+<label>送る内容（URLでもJSON本文でもOK）：<br>
+  <textarea id="payload" rows="6" style="width:520px"></textarea>
+</label>
+<br>
+<button id="send">送信</button>
+<pre id="log"></pre>
+
+<script>
+const $ = (s)=>document.querySelector(s);
+$("#token").value  = localStorage.getItem("pat") || "";
+$("#gistId").value = localStorage.getItem("gistId") || "";
+
+$("#saveTok").onclick  = ()=>{ localStorage.setItem("pat", $("#token").value); alert("保存したよ"); };
+$("#saveGist").onclick = ()=>{ localStorage.setItem("gistId", $("#gistId").value); alert("保存したよ"); };
+
+$("#send").onclick = async () => {
+  const token  = $("#token").value.trim();
+  const gistId = $("#gistId").value.trim();
+  const content = $("#payload").value; // URL文字列でもJSON本文でもOK
+
+  if (!token || !gistId || !content) { alert("全部入れて！"); return; }
+
+  const body = JSON.stringify({
+    files: { "current.txt": { content } }
+  });
+
+  const res = await fetch("https://api.github.com/gists/" + gistId, {
+    method: "PATCH",
+    headers: {
+      "Authorization": "Bearer " + token,
+      "Accept": "application/vnd.github+json",
+      "User-Agent": "overlay-updater",
+      "Content-Type": "application/json"
+    },
+    body
+  });
+
+  $("#log").textContent = res.ok ? "OK: 更新しました" : `NG: ${res.status} ${await res.text()}`;
+};
+</script>
